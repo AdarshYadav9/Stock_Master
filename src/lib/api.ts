@@ -1,6 +1,6 @@
-// API utility functions
+import { db, DB_COLLECTIONS } from './database';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL ='http://localhost:3001/api';
 
 export interface ApiResponse<T> {
   data?: T;
@@ -8,93 +8,182 @@ export interface ApiResponse<T> {
   message?: string;
 }
 
-// Generic API request function
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<ApiResponse<T>> {
-  try {
-    const token = localStorage.getItem('auth-token');
-    const url = `${API_BASE_URL}${endpoint}`;
-    
-    console.log('API Request:', url, options.method || 'GET'); // Debug log
-    
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options.headers,
-      },
-    });
-
-    // Handle non-JSON responses
-    let data;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      console.error('Non-JSON response:', text);
-      return {
-        error: `Server error: ${response.status} ${response.statusText}`,
-      };
-    }
-
-    if (!response.ok) {
-      console.error('API Error:', response.status, data); // Debug log
-      return {
-        error: data.error || `Error ${response.status}: ${response.statusText}`,
-        message: data.message,
-      };
-    }
-
-    return { data };
-  } catch (error) {
-    console.error('API Request Error:', error); // Debug log
-    const errorMessage = error instanceof Error ? error.message : 'Network error occurred';
-    
-    // Check if it's a connection error
-    if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-      return {
-        error: 'Cannot connect to server. Please ensure the backend server is running on port 3001.',
-      };
-    }
-    
-    return {
-      error: errorMessage,
-    };
-  }
-}
-
-// Auth API functions
-export const authAPI = {
-  signup: async (name: string, email: string, password: string) => {
-    return apiRequest<{ user: any; token: string }>('/auth/signup', {
-      method: 'POST',
-      body: JSON.stringify({ name, email, password }),
-    });
-  },
-
-  login: async (email: string, password: string) => {
-    return apiRequest<{ user: any; token: string }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-  },
-
-  requestOTP: async (email: string) => {
-    return apiRequest<{ message: string }>('/auth/request-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
-  },
-
-  resetPassword: async (email: string, otp: string, newPassword: string) => {
-    return apiRequest<{ message: string }>('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email, otp, newPassword }),
-    });
-  },
+// Simple hash function
+const hashPassword = (password: string): string => {
+  return btoa(password);
 };
 
+const verifyPassword = (password: string, hash: string): boolean => {
+  return btoa(password) === hash;
+};
+
+export const authAPI = {
+  signup: async (name: string, email: string, password: string): Promise<ApiResponse<{ user: any; token: string }>> => {
+    try {
+      const existingUser = await db.findOneInCollection(
+        DB_COLLECTIONS.USERS,
+        (user: any) => user.email === email
+      );
+
+      if (existingUser) {
+        return { error: 'User already exists with this email' };
+      }
+
+      const newUser = {
+        id: crypto.randomUUID(),
+        name,
+        email,
+        password: hashPassword(password),
+        createdAt: new Date().toISOString(),
+      };
+
+      await db.addToCollection(DB_COLLECTIONS.USERS, newUser);
+      const token = btoa(`${email}:${Date.now()}`);
+
+      const { password: _, ...userWithoutPassword } = newUser;
+
+      return {
+        data: {
+          user: userWithoutPassword,
+          token,
+        },
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Signup failed',
+      };
+    }
+  },
+
+  login: async (email: string, password: string): Promise<ApiResponse<{ user: any; token: string }>> => {
+    try {
+      const user = await db.findOneInCollection(
+        DB_COLLECTIONS.USERS,
+        (u: any) => u.email === email
+      );
+
+      if (!user) {
+        return { error: 'Invalid email or password' };
+      }
+
+      if (!verifyPassword(password, user.password)) {
+        return { error: 'Invalid email or password' };
+      }
+
+      const token = btoa(`${email}:${Date.now()}`);
+
+      const { password: _, ...userWithoutPassword } = user;
+
+      return {
+        data: {
+          user: userWithoutPassword,
+          token,
+        },
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Login failed',
+      };
+    }
+  },
+
+  // ------------------------------
+  // FIXED OTP REQUEST FUNCTION
+  // ------------------------------
+  requestOTP: async (email: string): Promise<ApiResponse<{ message: string }>> => {
+    try {
+      const user = await db.findOneInCollection(
+        DB_COLLECTIONS.USERS,
+        (u: any) => u.email === email
+      );
+
+      if (!user) {
+        return { error: 'No account found with this email' };
+      }
+
+      // SINGLE CORRECT API CALL
+      const response = await fetch(`${API_BASE_URL}/send-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          name: user.name,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { error: data.error || 'Failed to send OTP' };
+      }
+
+      console.log(`OTP sent to ${email}`);
+
+      return {
+        data: {
+          message: `OTP has been sent to ${email}`,
+        },
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Failed to send OTP',
+      };
+    }
+  },
+
+  // ------------------------------
+  // RESET PASSWORD (LOCAL DB)
+  // ------------------------------
+  resetPassword: async (
+    email: string,
+    otp: string,
+    newPassword: string
+  ): Promise<ApiResponse<{ message: string }>> => {
+    try {
+      const otpData = await db.get<{ otp: string; expiresAt: number; email: string }>(`otp_${email}`);
+
+      if (!otpData) {
+        return { error: 'OTP not found. Please request a new OTP.' };
+      }
+
+      if (otpData.expiresAt < Date.now()) {
+        await db.delete(`otp_${email}`);
+        return { error: 'OTP has expired. Please request a new one.' };
+      }
+
+      if (otpData.otp !== otp.trim()) {
+        return { error: 'Invalid OTP. Please try again.' };
+      }
+
+      // Update password
+      const users = await db.getCollection<any>(DB_COLLECTIONS.USERS);
+      const userIndex = users.findIndex((u: any) => u.email === email);
+
+      if (userIndex === -1) {
+        return { error: 'User not found' };
+      }
+
+      users[userIndex].password = hashPassword(newPassword);
+      users[userIndex].updatedAt = new Date().toISOString();
+
+      await db.set(DB_COLLECTIONS.USERS, users);
+
+      // Delete OTP
+      await db.delete(`otp_${email}`);
+
+      console.log(`Password reset successful for ${email}`);
+
+      return {
+        data: {
+          message: 'Password reset successfully! You can now login.',
+        },
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Failed to reset password',
+      };
+    }
+  },
+};
