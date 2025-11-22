@@ -8,6 +8,7 @@ import { useEffect } from "react";
 // Pages
 import SignInPage from "./pages/SignIn";
 import SignUpPage from "./pages/SignUp";
+import ForgotPassword from "./pages/ForgotPassword";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import ProductNew from "./pages/ProductNew";
@@ -40,8 +41,16 @@ import { useAuthStore } from "./store/authStore";
 const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  return isAuthenticated ? <>{children}</> : <Navigate to="/sign-in" />;
+  const { isAuthenticated, token } = useAuthStore();
+  
+  // Check if token exists in localStorage as well
+  const hasToken = token || localStorage.getItem('auth-token');
+  
+  if (!isAuthenticated || !hasToken) {
+    return <Navigate to="/sign-in" replace />;
+  }
+  
+  return <>{children}</>;
 };
 
 // Component to initialize stores and seed data
@@ -89,6 +98,7 @@ const App = () => {
             />
             <Route path="/sign-in" element={<SignInPage />} />
             <Route path="/sign-up" element={<SignUpPage />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route
               path="/dashboard"
               element={

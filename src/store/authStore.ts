@@ -1,114 +1,156 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { db, DB_COLLECTIONS } from '@/lib/database';
+import { authAPI } from '@/lib/api';
 import { toast } from 'sonner';
 
 export interface User {
-  id: string;
+  _id: string;
+  id?: string; // For compatibility
   email: string;
   name: string;
   role: string;
-  password?: string; // Only stored hashed in real app
   createdAt: string;
 }
 
 interface AuthState {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => void;
-  resetPassword: (email: string) => Promise<void>;
+  requestOTP: (email: string) => Promise<void>;
+  resetPassword: (email: string, otp: string, newPassword: string) => Promise<void>;
   getCurrentUser: () => User | null;
 }
-
-// Simple hash function (in production, use proper hashing)
-const hashPassword = (password: string): string => {
-  // Simple hash - in production use bcrypt or similar
-  return btoa(password).split('').reverse().join('');
-};
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
+      token: null,
       isAuthenticated: false,
+      
       login: async (email: string, password: string) => {
         try {
-          const users = await db.getCollection<User>(DB_COLLECTIONS.USERS);
-          const user = users.find(
-            (u) => u.email === email && u.password === hashPassword(password)
-          );
-
-          if (!user) {
-            throw new Error('Invalid email or password');
+          const response = await authAPI.login(email, password);
+          
+          if (response.error || !response.data) {
+            throw new Error(response.error || 'Login failed');
           }
 
-          // Remove password from user object
-          const { password: _, ...userWithoutPassword } = user;
-          set({ user: userWithoutPassword as User, isAuthenticated: true });
+          const { user, token } = response.data;
+          
+          // Store token
+          localStorage.setItem('auth-token', token);
+          
+          // Normalize user ID
+          const normalizedUser: User = {
+            ...user,
+            id: user._id || user.id,
+          };
+
+          set({ 
+            user: normalizedUser, 
+            token,
+            isAuthenticated: true 
+          });
+          
           toast.success('Login successful');
         } catch (error) {
-          toast.error('Invalid email or password');
+          toast.error((error as Error).message || 'Invalid email or password');
           throw error;
         }
       },
+      
       signup: async (email: string, password: string, name: string) => {
         try {
-          const users = await db.getCollection<User>(DB_COLLECTIONS.USERS);
+          const response = await authAPI.signup(name, email, password);
           
-          // Check if user already exists
-          const existingUser = users.find((u) => u.email === email);
-          if (existingUser) {
-            throw new Error('User with this email already exists');
+          if (response.error || !response.data) {
+            throw new Error(response.error || 'Signup failed');
           }
 
-          const newUser: User = {
-            id: `user-${Date.now()}`,
-            email,
-            name,
-            role: 'user',
-            password: hashPassword(password),
-            createdAt: new Date().toISOString(),
+          const { user, token } = response.data;
+          
+          // Store token
+          localStorage.setItem('auth-token', token);
+          
+          // Normalize user ID
+          const normalizedUser: User = {
+            ...user,
+            id: user._id || user.id,
           };
 
-          await db.addToCollection(DB_COLLECTIONS.USERS, newUser);
+          set({ 
+            user: normalizedUser, 
+            token,
+            isAuthenticated: true 
+          });
           
-          // Remove password from user object
-          const { password: _, ...userWithoutPassword } = newUser;
-          set({ user: userWithoutPassword as User, isAuthenticated: true });
           toast.success('Account created successfully');
         } catch (error) {
           toast.error((error as Error).message || 'Failed to create account');
           throw error;
         }
       },
+      
       logout: () => {
-        set({ user: null, isAuthenticated: false });
+        localStorage.removeItem('auth-token');
+        set({ 
+          user: null, 
+          token: null,
+          isAuthenticated: false 
+        });
         toast.success('Logged out successfully');
       },
-      resetPassword: async (email: string) => {
+      
+      requestOTP: async (email: string) => {
         try {
-          const users = await db.getCollection<User>(DB_COLLECTIONS.USERS);
-          const user = users.find((u) => u.email === email);
+          const response = await authAPI.requestOTP(email);
           
-          if (!user) {
-            throw new Error('User not found');
+          if (response.error) {
+            throw new Error(response.error);
           }
 
-          // In a real app, send email with reset link
-          toast.success('Password reset link sent to your email');
+          toast.success('OTP sent to your email');
         } catch (error) {
-          toast.error('Failed to send reset link');
+          toast.error((error as Error).message || 'Failed to send OTP');
           throw error;
         }
       },
+      
+      resetPassword: async (email: string, otp: string, newPassword: string) => {
+        try {
+          const response = await authAPI.resetPassword(email, otp, newPassword);
+          
+          if (response.error) {
+            throw new Error(response.error);
+          }
+
+          toast.success('Password reset successfully');
+        } catch (error) {
+          toast.error((error as Error).message || 'Failed to reset password');
+          throw error;
+        }
+      },
+      
       getCurrentUser: () => {
         return get().user;
       },
     }),
     {
       name: 'auth-storage',
+      onRehydrateStorage: () => (state) => {
+        // Initialize token from localStorage on rehydrate
+        if (state) {
+          const storedToken = localStorage.getItem('auth-token');
+          if (storedToken && !state.token) {
+            state.token = storedToken;
+            state.isAuthenticated = !!storedToken;
+          }
+        }
+      },
     }
   )
 );

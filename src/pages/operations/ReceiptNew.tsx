@@ -101,7 +101,7 @@ const ReceiptNew = () => {
         warehouse: data.warehouse,
         status: 'draft',
         items: receiptItems,
-        userId: user?.id || 'user-1',
+        userId: user?.id || user?._id || 'user-1',
       });
 
       toast.success('Receipt created successfully');

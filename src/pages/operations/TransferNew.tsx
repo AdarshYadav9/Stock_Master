@@ -102,7 +102,7 @@ const TransferNew = () => {
         toWarehouse: data.toWarehouse,
         status: 'draft',
         items: transferItems,
-        userId: user?.id || 'user-1',
+        userId: user?.id || user?._id || 'user-1',
       });
 
       toast.success('Transfer created successfully');

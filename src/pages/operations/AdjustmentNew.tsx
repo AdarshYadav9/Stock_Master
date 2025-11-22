@@ -108,7 +108,7 @@ const AdjustmentNew = () => {
         reason: data.reason,
         status: 'draft',
         items: adjustmentItems,
-        userId: user?.id || 'user-1',
+        userId: user?.id || user?._id || 'user-1',
       });
 
       toast.success('Adjustment created successfully');
