@@ -7,32 +7,19 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Package } from 'lucide-react';
 
-const SignUpPage = () => {
-  const [name, setName] = useState('');
+const SignInPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const signup = useAuthStore((state) => state.signup);
+  const login = useAuthStore((state) => state.login);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (password !== confirmPassword) {
-      alert('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 6) {
-      alert('Password must be at least 6 characters');
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      await signup(email, password, name);
+      await login(email, password);
       navigate('/dashboard');
     } catch (error) {
       // Error is handled in the store
@@ -48,22 +35,11 @@ const SignUpPage = () => {
           <div className="mx-auto h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
             <Package className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-2xl">Create Account</CardTitle>
-          <CardDescription>Sign up for StockMaster inventory management</CardDescription>
+          <CardTitle className="text-2xl">Welcome to StockMaster</CardTitle>
+          <CardDescription>Sign in to your inventory management account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="John Doe"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -80,33 +56,28 @@ const SignUpPage = () => {
               <Input
                 id="password"
                 type="password"
-                placeholder="At least 6 characters"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={6}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Confirm your password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={6}
-              />
+            <div className="flex items-center justify-between">
+              <Link
+                to="/forgot-password"
+                className="text-sm text-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Creating account...' : 'Sign up'}
+              {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
           </form>
           <div className="mt-4 text-center text-sm">
-            Already have an account?{' '}
-            <Link to="/sign-in" className="text-primary hover:underline">
-              Sign in
+            Don't have an account?{' '}
+            <Link to="/sign-up" className="text-primary hover:underline">
+              Sign up
             </Link>
           </div>
         </CardContent>
@@ -115,4 +86,4 @@ const SignUpPage = () => {
   );
 };
 
-export default SignUpPage;
+export default SignInPage;

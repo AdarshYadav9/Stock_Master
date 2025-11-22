@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { KpiCard } from '@/components/KpiCard';
 import { Package, AlertTriangle, FileText, TruckIcon, ArrowLeftRight } from 'lucide-react';
@@ -13,10 +14,28 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useWarehousesStore } from '@/store/warehousesStore';
 
 const Dashboard = () => {
-  const products = useProductsStore((state) => state.products);
-  const stockMoves = useOperationsStore((state) => state.stockMoves);
+  const { products, fetchProducts } = useProductsStore();
+  const { stockMoves, fetchStockMoves } = useOperationsStore();
+  const { warehouses, fetchWarehouses } = useWarehousesStore();
+  const [documentTypeFilter, setDocumentTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
+
+  useEffect(() => {
+    fetchProducts();
+    fetchStockMoves();
+    fetchWarehouses();
+  }, []);
 
   const totalStock = products.reduce((acc, product) => {
     return acc + product.stock.reduce((sum, s) => sum + s.quantity, 0);
@@ -27,24 +46,37 @@ const Dashboard = () => {
     return total < product.reorderPoint;
   }).length;
 
-  const pendingReceipts = stockMoves.filter((m) => m.type === 'receipt' && m.status !== 'done').length;
-  const pendingDeliveries = stockMoves.filter((m) => m.type === 'delivery' && m.status !== 'done').length;
-  const pendingTransfers = stockMoves.filter((m) => m.type === 'transfer' && m.status !== 'done').length;
+  const pendingReceipts = stockMoves.filter(
+    (m) => m.type === 'receipt' && m.status !== 'done' && m.status !== 'canceled'
+  ).length;
+  const pendingDeliveries = stockMoves.filter(
+    (m) => m.type === 'delivery' && m.status !== 'done' && m.status !== 'canceled'
+  ).length;
+  const pendingTransfers = stockMoves.filter(
+    (m) => m.type === 'transfer' && m.status !== 'done' && m.status !== 'canceled'
+  ).length;
+
+  const filteredMoves = stockMoves.filter((move) => {
+    const matchesType = documentTypeFilter === 'all' || move.type === documentTypeFilter;
+    const matchesStatus = statusFilter === 'all' || move.status === statusFilter;
+    const matchesWarehouse = warehouseFilter === 'all' || move.warehouse === warehouseFilter;
+    return matchesType && matchesStatus && matchesWarehouse;
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'done':
-        return 'bg-success text-success-foreground';
+        return 'default';
       case 'ready':
-        return 'bg-primary text-primary-foreground';
+        return 'default';
       case 'waiting':
-        return 'bg-warning text-warning-foreground';
+        return 'secondary';
       case 'draft':
-        return 'bg-muted text-muted-foreground';
+        return 'outline';
       case 'canceled':
-        return 'bg-destructive text-destructive-foreground';
+        return 'destructive';
       default:
-        return 'bg-muted text-muted-foreground';
+        return 'outline';
     }
   };
 
@@ -88,6 +120,54 @@ const Dashboard = () => {
 
         <Card>
           <CardHeader>
+            <CardTitle>Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4">
+              <Select value={documentTypeFilter} onValueChange={setDocumentTypeFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Document Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="receipt">Receipts</SelectItem>
+                  <SelectItem value="delivery">Deliveries</SelectItem>
+                  <SelectItem value="transfer">Transfers</SelectItem>
+                  <SelectItem value="adjustment">Adjustments</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="waiting">Waiting</SelectItem>
+                  <SelectItem value="ready">Ready</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                  <SelectItem value="canceled">Canceled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Warehouses</SelectItem>
+                  {warehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
           </CardHeader>
           <CardContent>
@@ -105,7 +185,7 @@ const Dashboard = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {stockMoves.slice(0, 10).map((move) => (
+                {filteredMoves.slice(0, 10).map((move) => (
                   <TableRow key={move.id}>
                     <TableCell className="font-medium capitalize">{move.type}</TableCell>
                     <TableCell>{move.product}</TableCell>
@@ -117,9 +197,7 @@ const Dashboard = () => {
                     <TableCell>{move.quantity}</TableCell>
                     <TableCell className="font-mono text-sm">{move.reference}</TableCell>
                     <TableCell>
-                      <Badge className={getStatusColor(move.status)}>
-                        {move.status}
-                      </Badge>
+                      <Badge variant={getStatusColor(move.status)}>{move.status}</Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {new Date(move.timestamp).toLocaleDateString()}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -9,38 +10,65 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useOperationsStore } from '@/store/operationsStore';
-import { ArrowUp, ArrowDown } from 'lucide-react';
+import { useWarehousesStore } from '@/store/warehousesStore';
 
 const Ledger = () => {
-  const stockMoves = useOperationsStore((state) => state.stockMoves);
+  const { stockMoves, loading, fetchStockMoves } = useOperationsStore();
+  const { warehouses, fetchWarehouses } = useWarehousesStore();
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
+
+  useEffect(() => {
+    fetchStockMoves({ type: typeFilter !== 'all' ? typeFilter : undefined });
+    fetchWarehouses();
+  }, [typeFilter]);
+
+  const filteredMoves = stockMoves.filter((move) => {
+    const matchesType = typeFilter === 'all' || move.type === typeFilter;
+    const matchesStatus = statusFilter === 'all' || move.status === statusFilter;
+    const matchesWarehouse = warehouseFilter === 'all' || move.warehouse === warehouseFilter;
+    return matchesType && matchesStatus && matchesWarehouse;
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'done':
-        return 'bg-success text-success-foreground';
+        return 'default';
       case 'ready':
-        return 'bg-primary text-primary-foreground';
+        return 'default';
       case 'waiting':
-        return 'bg-warning text-warning-foreground';
+        return 'secondary';
       case 'draft':
-        return 'bg-muted text-muted-foreground';
+        return 'outline';
       case 'canceled':
-        return 'bg-destructive text-destructive-foreground';
+        return 'destructive';
       default:
-        return 'bg-muted text-muted-foreground';
+        return 'outline';
     }
   };
 
-  const getQuantityDisplay = (move: any) => {
-    const isIncoming = move.type === 'receipt' || (move.type === 'transfer' && move.toLocation);
-    return (
-      <div className={`flex items-center gap-1 ${isIncoming ? 'text-success' : 'text-destructive'}`}>
-        {isIncoming ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
-        {isIncoming ? '+' : '-'}
-        {move.quantity}
-      </div>
-    );
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'receipt':
+        return 'default';
+      case 'delivery':
+        return 'secondary';
+      case 'transfer':
+        return 'outline';
+      case 'adjustment':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
   };
 
   return (
@@ -53,51 +81,109 @@ const Ledger = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Stock Movement Ledger</CardTitle>
+            <CardTitle>Filters</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
-                  <TableHead>Change</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stockMoves
-                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-                  .map((move) => (
+            <div className="flex gap-4">
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="receipt">Receipt</SelectItem>
+                  <SelectItem value="delivery">Delivery</SelectItem>
+                  <SelectItem value="transfer">Transfer</SelectItem>
+                  <SelectItem value="adjustment">Adjustment</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="waiting">Waiting</SelectItem>
+                  <SelectItem value="ready">Ready</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                  <SelectItem value="canceled">Canceled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Warehouses</SelectItem>
+                  {warehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Stock Movements</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : filteredMoves.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No movements found</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredMoves.map((move) => (
                     <TableRow key={move.id}>
-                      <TableCell className="text-sm">
-                        {new Date(move.timestamp).toLocaleString()}
-                      </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="capitalize">
+                        <Badge variant={getTypeColor(move.type)} className="capitalize">
                           {move.type}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-medium">{move.product}</TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground">
-                        {move.productSku}
+                      <TableCell className="font-mono text-sm">{move.productSku}</TableCell>
+                      <TableCell className="text-sm">
+                        {move.fromLocation && `${move.fromLocation} → `}
+                        {move.toLocation}
                       </TableCell>
-                      <TableCell className="text-sm">{move.fromLocation || '-'}</TableCell>
-                      <TableCell className="text-sm">{move.toLocation}</TableCell>
-                      <TableCell className="font-semibold">{getQuantityDisplay(move)}</TableCell>
+                      <TableCell
+                        className={
+                          move.quantity < 0 ? 'text-red-600' : move.quantity > 0 ? 'text-green-600' : ''
+                        }
+                      >
+                        {move.quantity > 0 ? '+' : ''}
+                        {move.quantity}
+                      </TableCell>
                       <TableCell className="font-mono text-sm">{move.reference}</TableCell>
                       <TableCell>
-                        <Badge className={getStatusColor(move.status)}>{move.status}</Badge>
+                        <Badge variant={getStatusColor(move.status)}>{move.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(move.timestamp).toLocaleString()}
                       </TableCell>
                     </TableRow>
                   ))}
-              </TableBody>
-            </Table>
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>

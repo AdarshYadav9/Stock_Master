@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,27 +12,59 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Plus, Eye, CheckCircle } from 'lucide-react';
 import { useOperationsStore } from '@/store/operationsStore';
+import { useWarehousesStore } from '@/store/warehousesStore';
+import { toast } from 'sonner';
 
 const Receipts = () => {
   const navigate = useNavigate();
-  const stockMoves = useOperationsStore((state) => state.stockMoves);
-  const receipts = stockMoves.filter((m) => m.type === 'receipt');
+  const { receipts, loading, fetchReceipts, validateReceipt } = useOperationsStore();
+  const { warehouses, fetchWarehouses } = useWarehousesStore();
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
+
+  useEffect(() => {
+    fetchReceipts();
+    fetchWarehouses();
+  }, []);
+
+  const filteredReceipts = receipts.filter((receipt) => {
+    const matchesStatus = statusFilter === 'all' || receipt.status === statusFilter;
+    const matchesWarehouse = warehouseFilter === 'all' || receipt.warehouse === warehouseFilter;
+    return matchesStatus && matchesWarehouse;
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'done':
-        return 'bg-success text-success-foreground';
+        return 'default';
       case 'ready':
-        return 'bg-primary text-primary-foreground';
+        return 'default';
       case 'waiting':
-        return 'bg-warning text-warning-foreground';
+        return 'secondary';
       case 'draft':
-        return 'bg-muted text-muted-foreground';
+        return 'outline';
+      case 'canceled':
+        return 'destructive';
       default:
-        return 'bg-muted text-muted-foreground';
+        return 'outline';
+    }
+  };
+
+  const handleValidate = async (id: string) => {
+    try {
+      await validateReceipt(id);
+      toast.success('Receipt validated and stock updated');
+    } catch (error) {
+      toast.error('Failed to validate receipt');
     }
   };
 
@@ -50,49 +84,100 @@ const Receipts = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Receipt List</CardTitle>
+            <CardTitle>Filters</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Destination</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {receipts.map((receipt) => (
-                  <TableRow key={receipt.id}>
-                    <TableCell className="font-mono">{receipt.reference}</TableCell>
-                    <TableCell className="font-medium">{receipt.product}</TableCell>
-                    <TableCell className="text-muted-foreground">{receipt.productSku}</TableCell>
-                    <TableCell>{receipt.toLocation}</TableCell>
-                    <TableCell>{receipt.quantity}</TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(receipt.status)}>
-                        {receipt.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{new Date(receipt.timestamp).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => navigate(`/operations/receipts/${receipt.id}`)}
-                      >
-                        View
-                      </Button>
-                    </TableCell>
+            <div className="flex gap-4">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="waiting">Waiting</SelectItem>
+                  <SelectItem value="ready">Ready</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                  <SelectItem value="canceled">Canceled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Warehouse" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Warehouses</SelectItem>
+                  {warehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>
+                      {wh.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Receipts List</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : filteredReceipts.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No receipts found</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Warehouse</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredReceipts.map((receipt) => (
+                    <TableRow key={receipt.id}>
+                      <TableCell className="font-mono font-medium">{receipt.reference}</TableCell>
+                      <TableCell>{receipt.supplier}</TableCell>
+                      <TableCell>
+                        {warehouses.find((w) => w.id === receipt.warehouse)?.name || receipt.warehouse}
+                      </TableCell>
+                      <TableCell>{receipt.items.length} items</TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusColor(receipt.status)}>{receipt.status}</Badge>
+                      </TableCell>
+                      <TableCell>{new Date(receipt.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/operations/receipts/${receipt.id}`)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {receipt.status === 'ready' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleValidate(receipt.id)}
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>
